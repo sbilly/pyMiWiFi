@@ -96,6 +96,10 @@ class MiWiFi(object):
             raise e
             return None
     def runAction(self, action):
+        """
+        docstring for runAction()
+        run a custom action like "pppoe_status", "pppoe_stop", "pppoe_start" ...
+        """
         if self.URL_DeviceListDaemon != None and self.cookies != None:
             try:
                 r = requests.get('%s/xqnetwork/%s' % (self.URL_ACTION, action), cookies = self.cookies)
