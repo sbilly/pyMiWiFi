@@ -31,7 +31,7 @@ class MiWiFi(object):
         # 小米路由器登录页面
         self.URL_LOGIN = "%s/cgi-bin/luci/api/xqsystem/login" % self.URL_ROOT
         # 小米路由器当前设备清单页面，登录后取得 stok 值才能完成拼接
-        self.URL_ACTION = "%s/cgi-bin/luci/api/xqsystem/" % self.URL_ROOT
+        self.URL_ACTION = None
         self.URL_DeviceListDaemon = None
  
     def nonceCreat(self, miwifi_deviceId):
@@ -75,8 +75,8 @@ class MiWiFi(object):
 
         self.stok = stok
         self.cookies = r.cookies
-        self.URL_DeviceListDaemon = "%s/cgi-bin/luci/;stok=%s/api/xqsystem/device_list" % (self.URL_ROOT, self.stok)
-
+        self.URL_ACTION =  "%s/cgi-bin/luci/;stok=%s/api/xqsystem" % (self.URL_ROOT, self.stok)
+        self.URL_DeviceListDaemon = "%s/device_list" % self.URL_ACTION
         return stok, r.cookies
 
     def listDevice(self):
@@ -98,7 +98,7 @@ class MiWiFi(object):
     def runAction(self, action):
         if self.URL_DeviceListDaemon != None and self.cookies != None:
             try:
-                r = requests.get(self.URL_ACTION'%s' % (self.stok, action), cookies = self.cookies)
+                r = requests.get('%s/%s' % (self.URL_ACTION, action), cookies = self.cookies)
                 return json.loads(r.text)
             except Exception, e:
                 raise e
