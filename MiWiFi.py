@@ -75,8 +75,8 @@ class MiWiFi(object):
 
         self.stok = stok
         self.cookies = r.cookies
-        self.URL_ACTION =  "%s/cgi-bin/luci/;stok=%s/api/xqsystem" % (self.URL_ROOT, self.stok)
-        self.URL_DeviceListDaemon = "%s/device_list" % self.URL_ACTION
+        self.URL_ACTION =  "%s/cgi-bin/luci/;stok=%s/api" % (self.URL_ROOT, self.stok)
+        self.URL_DeviceListDaemon = "%s/xqsystem/device_list" % self.URL_ACTION
         return stok, r.cookies
 
     def listDevice(self):
@@ -98,7 +98,7 @@ class MiWiFi(object):
     def runAction(self, action):
         if self.URL_DeviceListDaemon != None and self.cookies != None:
             try:
-                r = requests.get('%s/%s' % (self.URL_ACTION, action), cookies = self.cookies)
+                r = requests.get('%s/xqnetwork/%s' % (self.URL_ACTION, action), cookies = self.cookies)
                 return json.loads(r.text)
             except Exception, e:
                 raise e
