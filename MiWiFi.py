@@ -31,6 +31,7 @@ class MiWiFi(object):
         # 小米路由器登录页面
         self.URL_LOGIN = "%s/cgi-bin/luci/api/xqsystem/login" % self.URL_ROOT
         # 小米路由器当前设备清单页面，登录后取得 stok 值才能完成拼接
+        self.URL_ACTION = None
         self.URL_DeviceListDaemon = None
  
     def nonceCreat(self, miwifi_deviceId):
@@ -74,8 +75,8 @@ class MiWiFi(object):
 
         self.stok = stok
         self.cookies = r.cookies
-        self.URL_DeviceListDaemon = "%s/cgi-bin/luci/;stok=%s/api/xqsystem/device_list" % (self.URL_ROOT, self.stok)
-
+        self.URL_ACTION =  "%s/cgi-bin/luci/;stok=%s/api" % (self.URL_ROOT, self.stok)
+        self.URL_DeviceListDaemon = "%s/xqsystem/device_list" % self.URL_ACTION
         return stok, r.cookies
 
     def listDevice(self):
@@ -88,6 +89,21 @@ class MiWiFi(object):
                 r = requests.get(self.URL_DeviceListDaemon, cookies = self.cookies)
                 # print json.dumps(json.loads(r.text), indent=4)
                 return json.loads(r.text).get('list')
+            except Exception, e:
+                raise e
+                return None
+        else:
+            raise e
+            return None
+    def runAction(self, action):
+        """
+        docstring for runAction()
+        run a custom action like "pppoe_status", "pppoe_stop", "pppoe_start" ...
+        """
+        if self.URL_DeviceListDaemon != None and self.cookies != None:
+            try:
+                r = requests.get('%s/xqnetwork/%s' % (self.URL_ACTION, action), cookies = self.cookies)
+                return json.loads(r.text)
             except Exception, e:
                 raise e
                 return None
