@@ -1,114 +1,150 @@
-#!/usr/bin/env python
-#coding=utf-8
-#-*- coding: utf-8 -*-
+#!/usr/bin/env python3
+# encoding: utf-8
+# ===============================================================================
+#
+#         FILE:  
+#
+#        USAGE:    
+#
+#  DESCRIPTION:  
+#
+#      OPTIONS:  ---
+# REQUIREMENTS:  ---
+#         BUGS:  ---
+#        NOTES:  ---
+#       AUTHOR:  YOUR NAME (), 
+#      COMPANY:  
+#      VERSION:  1.0
+#      CREATED:  
+#     REVISION:  ---
+# ===============================================================================
 
-# 小米路由器远程管理 API
-
-import random
-import math
-import time
-import hashlib
+from random import random
+from time import time
+from hashlib import sha1
+from requests import get, post
+from math import floor
 import json
+import re
 
-import requests
-
-class MiWiFi(object):
+class MiWiFiClient(object):
     """
     docstring for MiWiFi
     """
-    def __init__(self):
-        super(MiWiFi, self).__init__()
+    # 小米路由器首页
+    URL_ROOT = "http://miwifi.com"
 
-        self.deviceId = None
-        self.type = '0'
-        self.nonce = None
-        self.password = None
-        self.stok = None
-        self.cookies = None
+    device_mac: str
+    device_type: str = '0'
+    password: str
+    key: str
+    stok: str
+    cookies: str = None
+    # 小米路由器当前设备清单页面，登录后取得 stok 值才能完成拼接
+    url_action: str = None
 
-        # 小米路由器首页
-        self.URL_ROOT = "http://miwifi.com"
-        # 小米路由器登录页面
-        self.URL_LOGIN = "%s/cgi-bin/luci/api/xqsystem/login" % self.URL_ROOT
-        # 小米路由器当前设备清单页面，登录后取得 stok 值才能完成拼接
-        self.URL_ACTION = None
-        self.URL_DeviceListDaemon = None
+    def __init__(self, password: str) -> None:
+        self.password = password
+        self.get_key()
  
-    def nonceCreat(self, miwifi_deviceId):
+    def gen_nonce(self) -> str:
         """
-        docstring for nonceCreat()
+        docstring for gen_nonce()
         模仿小米路由器的登录页面，计算 hash 所需的 nonce 值
         """
-        self.deviceId = miwifi_deviceId
-        miwifi_type = self.type
-        miwifi_time = str(int(math.floor(time.time())))
-        miwifi_random = str(int(math.floor(random.random() * 10000)))
-        self.nonce = '_'.join([miwifi_type, miwifi_deviceId, miwifi_time, miwifi_random])
+        miwifi_time = str(int(floor(time())))
+        miwifi_random = str(int(floor(random() * 10000)))
+        return '_'.join([self.device_type, self.device_mac, miwifi_time, miwifi_random])
 
-        return self.nonce
-
-    def oldPwd(self, password, key):
+    def encode_pass(self, nonce) -> str:
         """
-        docstring for oldPwd()
+        docstring for encode_pass()
         模仿小米路由器的登录页面，计算密码的 hash
         """
-        self.password = hashlib.sha1(self.nonce + hashlib.sha1(password + key).hexdigest()).hexdigest()
+        return sha1(str(nonce+sha1(str(self.password + self.key).encode()).hexdigest()).encode()).hexdigest()
 
-        return self.password
+    def get_key(self):
+        url = '%s/cgi-bin/luci/web/home' % self.URL_ROOT
+        try:
+            ret = get(url)
+            if ret.status_code != 200:
+                raise RuntimeError('%s status code %s' % (url, ret.status_code))
+        except Exception as e:
+            raise e
+        key_matched = False
+        mac_matched = False
+        # key: 'a2ffa5c9be07488bbb04a3a47d3c5f6a',
+        re_key = re.compile("^\s*key:\s'([^']+)',")
+        # var deviceId = 'f8:ff:c2:2b:1e:45';
+        re_mac = re.compile("^\s*var\sdeviceId\s=\s'([^']+)';")
+        ret_text= ret.text.split('\n')
+        for t in ret_text:
+            if key_matched is True and mac_matched is True:
+                break
+            is_match =  re_key.search(t)
+            if is_match:
+                self.key = is_match.groups()[0]
+                key_matched = True
+                continue
+            is_match = re_mac.search(t)
+            if is_match:
+                self.device_mac = is_match.groups()[0]
+                mac_matched = True
+                continue
 
-    def login(self, deviceId, password, key):
+    def login(self):
         """
         docstring for login()
         登录小米路由器，并取得对应的 cookie 和用于拼接 URL 所需的 stok
         """
-        nonce = self.nonceCreat(deviceId)
-        password = self.oldPwd(password, key)
+        url = "%s/cgi-bin/luci/api/xqsystem/login" % self.URL_ROOT
+        nonce = self.gen_nonce()
+        password = self.encode_pass(nonce)
         payload = {'username': 'admin', 'logtype': '2', 'password': password, 'nonce': nonce}
         # print payload
  
         try:
-            r = requests.post(self.URL_LOGIN, data = payload)
+            r = post(url, data=payload)
             # print r.text
             stok = json.loads(r.text).get('url').split('=')[1].split('/')[0]
-        except Exception, e:
+        except Exception as e:
             raise e
 
         self.stok = stok
         self.cookies = r.cookies
-        self.URL_ACTION =  "%s/cgi-bin/luci/;stok=%s/api" % (self.URL_ROOT, self.stok)
-        self.URL_DeviceListDaemon = "%s/xqsystem/device_list" % self.URL_ACTION
-        return stok, r.cookies
+        self.url_action =  "%s/cgi-bin/luci/;stok=%s/api" % (self.URL_ROOT, self.stok)
 
-    def listDevice(self):
+    def list_device(self) -> dict:
         """
-        docstring for listDevice()
+        docstring for list_device()
         列出小米路由器上当前的设备清单
         """
-        if self.URL_DeviceListDaemon != None and self.cookies != None:
-            try:
-                r = requests.get(self.URL_DeviceListDaemon, cookies = self.cookies)
-                # print json.dumps(json.loads(r.text), indent=4)
-                return json.loads(r.text).get('list')
-            except Exception, e:
-                raise e
-                return None
-        else:
+        if self.url_action is None or self.cookies is None:
+            self.login()
+        url = "%s/xqsystem/device_list" % self.url_action
+        try:
+            r = get(url, cookies = self.cookies)
+            # print json.dumps(json.loads(r.text), indent=4)
+            return json.loads(r.text).get('list')
+        except Exception as e:
             raise e
-            return None
-    def runAction(self, action):
+
+    def run_action(self, action: str) -> dict:
         """
-        docstring for runAction()
+        docstring for run_action()
         run a custom action like "pppoe_status", "pppoe_stop", "pppoe_start" ...
         """
-        if self.URL_DeviceListDaemon != None and self.cookies != None:
-            try:
-                r = requests.get('%s/xqnetwork/%s' % (self.URL_ACTION, action), cookies = self.cookies)
-                return json.loads(r.text)
-            except Exception, e:
-                raise e
-                return None
-        else:
+        if self.url_action is None or self.cookies is None:
+            self.login()
+        url = '%s/xqnetwork/%s' % (self.url_action, action)
+        
+        try:
+            r = get(url , cookies = self.cookies)
+            return json.loads(r.text)
+        except Exception as e:
             raise e
-            return None
+
+
+
 
 
