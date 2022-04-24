@@ -25,6 +25,7 @@ from hashlib import sha1
 from requests import get, post
 from math import floor
 import json
+import re
 
 class MiWiFiClient(object):
     """
@@ -36,17 +37,15 @@ class MiWiFiClient(object):
     device_mac: str
     device_type: str = '0'
     password: str
+    key: str
     stok: str
     cookies: str = None
     # 小米路由器当前设备清单页面，登录后取得 stok 值才能完成拼接
     url_action: str = None
-    url_device_list_daemon: str = None
 
-
-    def __init__(self, password: str, key: str, mac_addr: str) -> None:
+    def __init__(self, password: str) -> None:
         self.password = password
-        self.key = key
-        self.device_mac = mac_addr
+        self.get_key()
  
     def gen_nonce(self) -> str:
         """
@@ -64,9 +63,34 @@ class MiWiFiClient(object):
         """
         return sha1(str(nonce+sha1(str(self.password + self.key).encode()).hexdigest()).encode()).hexdigest()
 
-    @classmethod
-    def get_key(cls):
-        url = '%s/cgi-bin/luci/web/home' % cls.URL_ROOT
+    def get_key(self):
+        url = '%s/cgi-bin/luci/web/home' % self.URL_ROOT
+        try:
+            ret = get(url)
+            if ret.status_code != 200:
+                raise RuntimeError('%s status code %s' % (url, ret.status_code))
+        except Exception as e:
+            raise e
+        key_matched = False
+        mac_matched = False
+        # key: 'a2ffa5c9be07488bbb04a3a47d3c5f6a',
+        re_key = re.compile("^\s*key:\s'([^']+)',")
+        # var deviceId = 'f8:ff:c2:2b:1e:45';
+        re_mac = re.compile("^\s*var\sdeviceId\s=\s'([^']+)';")
+        ret_text= ret.text.split('\n')
+        for t in ret_text:
+            if key_matched is True and mac_matched is True:
+                break
+            is_match =  re_key.search(t)
+            if is_match:
+                self.key = is_match.groups()[0]
+                key_matched = True
+                continue
+            is_match = re_mac.search(t)
+            if is_match:
+                self.device_mac = is_match.groups()[0]
+                mac_matched = True
+                continue
 
     def login(self):
         """
@@ -90,7 +114,7 @@ class MiWiFiClient(object):
         self.cookies = r.cookies
         self.url_action =  "%s/cgi-bin/luci/;stok=%s/api" % (self.URL_ROOT, self.stok)
 
-    def list_device(self):
+    def list_device(self) -> dict:
         """
         docstring for list_device()
         列出小米路由器上当前的设备清单
@@ -99,13 +123,13 @@ class MiWiFiClient(object):
             self.login()
         url = "%s/xqsystem/device_list" % self.url_action
         try:
-            r = get(self.url, cookies = self.cookies)
+            r = get(url, cookies = self.cookies)
             # print json.dumps(json.loads(r.text), indent=4)
             return json.loads(r.text).get('list')
         except Exception as e:
             raise e
 
-    def run_action(self, action: str):
+    def run_action(self, action: str) -> dict:
         """
         docstring for run_action()
         run a custom action like "pppoe_status", "pppoe_stop", "pppoe_start" ...
